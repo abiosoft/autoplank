@@ -43,7 +43,7 @@ func pollMouse() <-chan axis {
 	aChan := make(chan axis)
 
 	go func() {
-		for range time.Tick(time.Second * 2) {
+		for range time.Tick(time.Millisecond * 500) {
 			pos, err := getMouseLocation()
 			if err != nil {
 				log.Println(err)
