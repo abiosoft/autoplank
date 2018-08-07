@@ -11,9 +11,7 @@ autoplank
 
 ## Building/Installing
 
-### Requirements
-
-Go 1.8 or newer.
+Requires Go 1.8 or newer.
 
 ```
 go build -o autoplank && sudo mv autoplank /usr/local/bin
