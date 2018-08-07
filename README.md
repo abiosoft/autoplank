@@ -23,7 +23,7 @@ You may want to create a service to start and keep running in background for con
 
 * create a systemd unit file `$HOME/.config/systemd/user/autoplank.service`
 
-```systemd
+```ini
 [Unit]
 Description=Autoplank Service
 
@@ -32,7 +32,7 @@ ExecStart=/usr/local/bin/autoplank
 Restart=always
 
 [Install]
-WantedBy=default.target
+WantedBy=graphical.target
 ```
 * enable and start
 ```
