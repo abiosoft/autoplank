@@ -35,6 +35,10 @@ func (m monitor) Within(x, y int) bool {
 		y < m.offset.y+m.axis.y
 }
 
+func (m monitor) IsBottom(y int) bool {
+	return y < m.offset.y+m.axis.y && y > m.offset.y+m.axis.y-20
+}
+
 func pollMouse() <-chan axis {
 	aChan := make(chan axis)
 
@@ -154,12 +158,16 @@ var requiredCommands = []string{
 }
 
 func init() {
+	errCount := 0
 	for _, c := range requiredCommands {
 		_, err := exec.LookPath(c)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, c+" not found in PATH")
-			os.Exit(1)
+			errCount++
 		}
+	}
+	if errCount > 0 {
+		os.Exit(1)
 	}
 }
 
@@ -170,7 +178,7 @@ func eventLoop() {
 			log.Println(err)
 		}
 		for _, m := range monitors {
-			if m.Within(pos.x, pos.y) {
+			if m.Within(pos.x, pos.y) && m.IsBottom(pos.y) {
 				err := movePlankTo(m)
 				if err != nil {
 					log.Println(err)
