@@ -1,6 +1,6 @@
 # autoplank
 
-Automatically move plank to the active monitor.
+Use plank on multi-monitor setup without creating multiple docks. Simply move the mouse to the bottom of any monitor and plank moves there.
 
 ## Usage
 
@@ -9,14 +9,11 @@ Start from the CLI.
 autoplank
 ```
 
-Move the mouse to the bottom of a monitor without plank and plank moves there.
+## Building/Installing
 
 ### Requirements
 
 Go 1.8 or newer.
-
-
-## Building/Installing
 
 ```
 go build -o autoplank && sudo mv autoplank /usr/local/bin
