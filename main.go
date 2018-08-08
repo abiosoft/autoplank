@@ -4,17 +4,40 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
+	"flag"
 	"fmt"
 	"log"
 	"os"
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
+var version = "0.1-untracked-dev"
+
 func main() {
+	validateDeps()
 	eventLoop()
+}
+
+var (
+	versonFlag bool
+	interval   = 2
+)
+
+func init() {
+
+	flag.BoolVar(&versonFlag, "v", versonFlag, "show version")
+	flag.IntVar(&interval, "interval", interval, "mouse poll interval in secs")
+
+	flag.Parse()
+
+	if versonFlag {
+		fmt.Println("autoplank v" + version)
+		os.Exit(0)
+	}
 }
 
 type axis struct {
@@ -43,7 +66,7 @@ func pollMouse() <-chan axis {
 	aChan := make(chan axis)
 
 	go func() {
-		for range time.Tick(time.Millisecond * 500) {
+		for range time.Tick(time.Second * time.Duration(interval)) {
 			pos, err := getMouseLocation()
 			if err != nil {
 				log.Println(err)
@@ -78,12 +101,71 @@ func getMouseLocation() (a axis, err error) {
 	return a, nil
 }
 
-func getMonitors() ([]monitor, error) {
+var mLock sync.RWMutex
+var monitors []monitor
+
+func watchMonitors() {
+	var err error
+	monitors, err = fetchMonitors()
+	if err != nil {
+		log.Println(err)
+	}
+
+	for range time.Tick(time.Second * 5) {
+		mLock.Lock()
+		monitors, err = fetchMonitors()
+		if err != nil {
+			log.Println(err)
+		}
+		mLock.Unlock()
+	}
+}
+
+func getMonitors(lastUpdate time.Time) ([]monitor, bool) {
+	mLock.RLock()
+	defer mLock.RUnlock()
+
+	if !monitorUpdate.After(lastUpdate) {
+		return nil, false
+	}
+
+	if len(monitors) == 0 {
+		// this is rare and should never happen
+		// may be a one off and can be fixed at the next
+		// poll.
+		// let's simply log
+		log.Println("Error: no monitors are found")
+	}
+
+	// create a copy to not worry about
+	// race conditions outside this
+	copy := make([]monitor, len(monitors))
+	for i := range copy {
+		copy[i] = monitors[i]
+	}
+
+	return copy, true
+}
+
+// keep track of previous monitor state
+var (
+	monitorState  string
+	monitorUpdate time.Time
+)
+
+func fetchMonitors() ([]monitor, error) {
 	cmd := exec.Command("xrandr")
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, err
 	}
+	if string(out) == monitorState {
+		// ignore
+		return monitors, nil
+	}
+	monitorState = string(out)
+	monitorUpdate = time.Now()
+
 	var monitors []monitor
 	scanner := bufio.NewScanner(bytes.NewReader(out))
 	for scanner.Scan() {
@@ -157,7 +239,7 @@ var requiredCommands = []string{
 	"dconf",
 }
 
-func init() {
+func validateDeps() {
 	errCount := 0
 	for _, c := range requiredCommands {
 		_, err := exec.LookPath(c)
@@ -172,10 +254,14 @@ func init() {
 }
 
 func eventLoop() {
-	for pos := range pollMouse() {
-		monitors, err := getMonitors()
-		if err != nil {
-			log.Println(err)
+	var monitors []monitor
+	var lastRequest time.Time
+	go watchMonitors()
+	var pos axis
+	for pos = range pollMouse() {
+		if ms, ok := getMonitors(lastRequest); ok {
+			lastRequest = time.Now()
+			monitors = ms
 		}
 		for _, m := range monitors {
 			if m.Within(pos.x, pos.y) && m.IsBottom(pos.y) {
