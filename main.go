@@ -44,22 +44,22 @@ type axis struct {
 	x, y int
 }
 
-type monitor struct {
+type display struct {
 	axis    axis
 	offset  axis
 	name    string
 	primary bool
 }
 
-func (m monitor) Within(x, y int) bool {
-	return x > m.offset.x &&
-		x < m.offset.x+m.axis.x &&
-		y > m.offset.y &&
-		y < m.offset.y+m.axis.y
+func (d display) Within(x, y int) bool {
+	return x > d.offset.x &&
+		x < d.offset.x+d.axis.x &&
+		y > d.offset.y &&
+		y < d.offset.y+d.axis.y
 }
 
-func (m monitor) IsBottom(y int) bool {
-	return y < m.offset.y+m.axis.y && y > m.offset.y+m.axis.y-20
+func (d display) IsBottom(y int) bool {
+	return y < d.offset.y+d.axis.y && y > d.offset.y+d.axis.y-20
 }
 
 func pollMouse() <-chan axis {
@@ -102,18 +102,18 @@ func getMouseLocation() (a axis, err error) {
 }
 
 var mLock sync.RWMutex
-var monitors []monitor
+var foundDisplays []display
 
-func watchMonitors() {
+func watchDisplays() {
 	var err error
-	monitors, err = fetchMonitors()
+	foundDisplays, err = fetchDisplays()
 	if err != nil {
 		log.Println(err)
 	}
 
 	for range time.Tick(time.Second * 5) {
 		mLock.Lock()
-		monitors, err = fetchMonitors()
+		foundDisplays, err = fetchDisplays()
 		if err != nil {
 			log.Println(err)
 		}
@@ -121,52 +121,52 @@ func watchMonitors() {
 	}
 }
 
-func getMonitors(lastUpdate time.Time) ([]monitor, bool) {
+func getDisplays(lastUpdate time.Time) ([]display, bool) {
 	mLock.RLock()
 	defer mLock.RUnlock()
 
-	if !monitorUpdate.After(lastUpdate) {
+	if !displaysUpdateTime.After(lastUpdate) {
 		return nil, false
 	}
 
-	if len(monitors) == 0 {
+	if len(foundDisplays) == 0 {
 		// this is rare and should never happen
 		// may be a one off and can be fixed at the next
 		// poll.
 		// let's simply log
-		log.Println("Error: no monitors are found")
+		log.Println("Error: no displays are found")
 	}
 
 	// create a copy to not worry about
 	// race conditions outside this
-	copy := make([]monitor, len(monitors))
+	copy := make([]display, len(foundDisplays))
 	for i := range copy {
-		copy[i] = monitors[i]
+		copy[i] = foundDisplays[i]
 	}
 
 	return copy, true
 }
 
-// keep track of previous monitor state
+// keep track of previous displays state
 var (
-	monitorState  string
-	monitorUpdate time.Time
+	displaysConf       string
+	displaysUpdateTime time.Time
 )
 
-func fetchMonitors() ([]monitor, error) {
+func fetchDisplays() ([]display, error) {
 	cmd := exec.Command("xrandr")
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, err
 	}
-	if string(out) == monitorState {
+	if string(out) == displaysConf {
 		// ignore
-		return monitors, nil
+		return foundDisplays, nil
 	}
-	monitorState = string(out)
-	monitorUpdate = time.Now()
+	displaysConf = string(out)
+	displaysUpdateTime = time.Now()
 
-	var monitors []monitor
+	var displays []display
 	scanner := bufio.NewScanner(bytes.NewReader(out))
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -177,7 +177,7 @@ func fetchMonitors() ([]monitor, error) {
 		if len(cols) < 3 {
 			return nil, errors.New("unexpected response from xrandr")
 		}
-		var m monitor
+		var m display
 		m.name = cols[0]
 		xy := cols[2]
 		if xy == "primary" {
@@ -196,17 +196,17 @@ func fetchMonitors() ([]monitor, error) {
 		m.offset.x, _ = strconv.Atoi(vals[2])
 		m.offset.y, _ = strconv.Atoi(vals[3])
 
-		monitors = append(monitors, m)
+		displays = append(displays, m)
 	}
 
-	return monitors, nil
+	return displays, nil
 }
 
 const dconfPlank = "/net/launchpad/plank/docks/dock1/monitor"
 
-func movePlankTo(m monitor) error {
-	value := fmt.Sprintf(`'%s'`, m.name)
-	if m.primary {
+func movePlankTo(d display) error {
+	value := fmt.Sprintf(`'%s'`, d.name)
+	if d.primary {
 		value = `''`
 	}
 
@@ -222,8 +222,8 @@ func movePlankTo(m monitor) error {
 	}
 
 	var buf bytes.Buffer
-	fmt.Fprint(&buf, "attempting to move plank to "+m.name)
-	if m.primary {
+	fmt.Fprint(&buf, "attempting to move plank to "+d.name)
+	if d.primary {
 		fmt.Fprintf(&buf, " - primary")
 	}
 
@@ -254,18 +254,18 @@ func validateDeps() {
 }
 
 func eventLoop() {
-	var monitors []monitor
-	var lastRequest time.Time
-	go watchMonitors()
+	var displays []display
+	var lastRequestTime time.Time
+	go watchDisplays()
 	var pos axis
 	for pos = range pollMouse() {
-		if ms, ok := getMonitors(lastRequest); ok {
-			lastRequest = time.Now()
-			monitors = ms
+		if ds, ok := getDisplays(lastRequestTime); ok {
+			lastRequestTime = time.Now()
+			displays = ds
 		}
-		for _, m := range monitors {
-			if m.Within(pos.x, pos.y) && m.IsBottom(pos.y) {
-				err := movePlankTo(m)
+		for _, d := range displays {
+			if d.Within(pos.x, pos.y) && d.IsBottom(pos.y) {
+				err := movePlankTo(d)
 				if err != nil {
 					log.Println(err)
 				}
@@ -273,5 +273,4 @@ func eventLoop() {
 			}
 		}
 	}
-
 }
