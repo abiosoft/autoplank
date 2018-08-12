@@ -139,12 +139,10 @@ func getDisplays(lastUpdate time.Time) ([]display, bool) {
 
 	// create a copy to not worry about
 	// race conditions outside this
-	copy := make([]display, len(foundDisplays))
-	for i := range copy {
-		copy[i] = foundDisplays[i]
-	}
+	displaysCopy := make([]display, len(foundDisplays))
+	copy(displaysCopy, foundDisplays)
 
-	return copy, true
+	return displaysCopy, true
 }
 
 // keep track of previous displays state
