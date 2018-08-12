@@ -101,35 +101,35 @@ func getMouseLocation() (a axis, err error) {
 	return a, nil
 }
 
-var mLock sync.RWMutex
-var foundDisplays []display
+var dLock sync.RWMutex
+var displaysFound []display
 
 func watchDisplays() {
 	var err error
-	foundDisplays, err = fetchDisplays()
+	displaysFound, err = fetchDisplays()
 	if err != nil {
 		log.Println(err)
 	}
 
 	for range time.Tick(time.Second * 5) {
-		mLock.Lock()
-		foundDisplays, err = fetchDisplays()
+		dLock.Lock()
+		displaysFound, err = fetchDisplays()
 		if err != nil {
 			log.Println(err)
 		}
-		mLock.Unlock()
+		dLock.Unlock()
 	}
 }
 
 func getDisplays(lastUpdate time.Time) ([]display, bool) {
-	mLock.RLock()
-	defer mLock.RUnlock()
+	dLock.RLock()
+	defer dLock.RUnlock()
 
 	if !displaysUpdateTime.After(lastUpdate) {
 		return nil, false
 	}
 
-	if len(foundDisplays) == 0 {
+	if len(displaysFound) == 0 {
 		// this is rare and should never happen
 		// may be a one off and can be fixed at the next
 		// poll.
@@ -139,8 +139,8 @@ func getDisplays(lastUpdate time.Time) ([]display, bool) {
 
 	// create a copy to not worry about
 	// race conditions outside this
-	displaysCopy := make([]display, len(foundDisplays))
-	copy(displaysCopy, foundDisplays)
+	displaysCopy := make([]display, len(displaysFound))
+	copy(displaysCopy, displaysFound)
 
 	return displaysCopy, true
 }
@@ -159,7 +159,7 @@ func fetchDisplays() ([]display, error) {
 	}
 	if string(out) == displaysConf {
 		// ignore
-		return foundDisplays, nil
+		return displaysFound, nil
 	}
 	displaysConf = string(out)
 	displaysUpdateTime = time.Now()
