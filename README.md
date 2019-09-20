@@ -22,7 +22,7 @@ sudo apt install git golang-go xdotool
 Then build:
 
 ```
-go build -o autoplank && sudo mv autoplank /usr/local/bin
+make install
 ```
 
 ### [Optional] Create a service
