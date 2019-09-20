@@ -13,8 +13,16 @@ autoplank
 
 Requires Go 1.8 or newer.
 
+Install Go using:
+
 ```
-go build -o autoplank && sudo mv autoplank /usr/local/bin
+sudo apt install git golang-go xdotool
+```
+
+Then build:
+
+```
+make install
 ```
 
 ### [Optional] Create a service
