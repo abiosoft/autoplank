@@ -81,7 +81,7 @@ func (d display) Within(x, y int) bool {
 func (d display) IsBottom(y int) bool {
 	// if the cursor is this low on the screen user is going to use plank
 	// we start the moving procedure
-	yOffset := 100
+	yOffset := 1080
 	return y < d.offset.y+d.axis.y && y > d.offset.y+d.axis.y-yOffset
 }
 
