@@ -44,13 +44,13 @@ func main() {
 
 var (
 	versonFlag bool
-	interval   = 1
+	interval   = 200
 )
 
 func init() {
 
 	flag.BoolVar(&versonFlag, "v", versonFlag, "show version")
-	flag.IntVar(&interval, "interval", interval, "mouse poll interval in secs")
+	flag.IntVar(&interval, "interval", interval, "mouse poll interval in millisecs")
 
 	flag.Parse()
 
@@ -89,7 +89,7 @@ func pollMouse() <-chan axis {
 	aChan := make(chan axis)
 
 	go func() {
-		for range time.Tick(time.Second * time.Duration(interval)) {
+		for range time.Tick(time.Millisecond * time.Duration(interval)) {
 			pos, err := getMouseLocation()
 			if err != nil {
 				log.Println(err)
