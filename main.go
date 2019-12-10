@@ -200,6 +200,7 @@ func fetchDisplays() ([]display, error) {
 	return displays, nil
 }
 
+const dconfPlankOffset = "/net/launchpad/plank/docks/dock1/offset"
 const dconfPlank = "/net/launchpad/plank/docks/dock1/monitor"
 
 func movePlankTo(d display) error {
@@ -227,7 +228,19 @@ func movePlankTo(d display) error {
 
 	log.Println(buf.String())
 
-	return exec.Command("dconf", "write", dconfPlank, value).
+	cmdOffset := exec.Command("dconf", "read", dconfPlankOffset)
+	offsOut, offsErr := cmdOffset.Output()
+	if offsErr != nil {
+		return offsErr
+	}
+	exec.Command("dconf", "write", dconfPlank, value).
+		Run()
+	if strings.TrimSpace(string(offsOut)) == "0" {
+		return exec.Command("dconf", "write", dconfPlankOffset, "1").
+		Run()
+	}
+
+	return exec.Command("dconf", "write", dconfPlankOffset, "0").
 		Run()
 }
 
