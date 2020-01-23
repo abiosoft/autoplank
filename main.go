@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -24,37 +25,26 @@ func main() {
 		log.Fatal("unable to gather screen information")
 	}
 	validateDeps()
-	// we set up the process we want to start
-	// no error handling needed here because validate deps checks for plank command
-	plank, _ := exec.LookPath("plank")
-	var attr = os.ProcAttr{Dir: ".", Env: os.Environ(), Files: []*os.File{nil, nil, nil, nil}}
-	process, err := os.StartProcess(plank, []string{}, &attr)
+	_, err := startPlank()
 	if err != nil {
-		fmt.Printf(err.Error())
-	} else {
-		err = process.Release()
-		if err != nil {
-			fmt.Printf(err.Error())
-		}
+		log.Fatal(err.Error())
 	}
-
-	exec.Command("plank")
 	eventLoop()
 }
 
 var (
-	versonFlag bool
-	interval   = 1
+	versionFlag bool
+	interval    = 1
 )
 
 func init() {
 
-	flag.BoolVar(&versonFlag, "v", versonFlag, "show version")
+	flag.BoolVar(&versionFlag, "v", versionFlag, "show version")
 	flag.IntVar(&interval, "interval", interval, "mouse poll interval in secs")
 
 	flag.Parse()
 
-	if versonFlag {
+	if versionFlag {
 		fmt.Println("autoplank v" + version)
 		os.Exit(0)
 	}
@@ -83,6 +73,33 @@ func (d display) IsBottom(y int) bool {
 	// we start the moving procedure
 	yOffset := 100
 	return y < d.offset.y+d.axis.y && y > d.offset.y+d.axis.y-yOffset
+}
+
+func startPlank() (*os.Process, error) {
+	// we set up the process we want to start
+	// no error handling needed here because validate deps checks for plank command
+	plank, _ := exec.LookPath("plank")
+	var cred = &syscall.Credential{Gid: uint32(os.Getuid()), Uid: uint32(os.Getgid()), Groups: []uint32{}, NoSetGroups: true}
+	var sysproc = &syscall.SysProcAttr{Credential: cred, Noctty: true}
+	var attr = os.ProcAttr{
+		Dir: ".",
+		Env: os.Environ(),
+		Files: []*os.File{
+			os.Stdin,
+			os.Stdout,
+			os.Stderr,
+		},
+		Sys: sysproc,
+	}
+	proc, err := os.StartProcess(plank, []string{}, &attr)
+	if err != nil {
+		return nil, err
+	}
+	err = proc.Release()
+	if err != nil {
+		return nil, err
+	}
+	return proc, nil
 }
 
 func pollMouse() <-chan axis {
@@ -192,10 +209,10 @@ func movePlankTo(d display) error {
 	if err == nil {
 		fmt.Printf("attempting to move plank to %s\n", d.name)
 		_ = exec.Command("killall", "plank").Run()
-		return exec.Command("plank").Start()
-	} else {
+		_, err := startPlank()
 		return err
 	}
+	return err
 
 }
 
