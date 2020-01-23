@@ -14,7 +14,7 @@ autoplank
 Requires Go 1.8 or newer.
 
 ```
-go build -o autoplank && sudo mv autoplank /usr/local/bin
+make install
 ```
 
 ### [Optional] Create a service

@@ -11,30 +11,40 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
-	"sync"
+	"syscall"
 	"time"
 )
 
-var version = "0.1-untracked-dev"
+var version = "0.1.1-untracked-dev"
+var displaysFound []display
 
 func main() {
+	if ds, err := fetchDisplays(); err == nil {
+		displaysFound = ds
+	} else {
+		log.Fatal("unable to gather screen information")
+	}
 	validateDeps()
+	_, err := startPlank()
+	if err != nil {
+		log.Fatal(err.Error())
+	}
 	eventLoop()
 }
 
 var (
-	versonFlag bool
-	interval   = 2
+	versionFlag bool
+	interval    = 1
 )
 
 func init() {
 
-	flag.BoolVar(&versonFlag, "v", versonFlag, "show version")
+	flag.BoolVar(&versionFlag, "v", versionFlag, "show version")
 	flag.IntVar(&interval, "interval", interval, "mouse poll interval in secs")
 
 	flag.Parse()
 
-	if versonFlag {
+	if versionFlag {
 		fmt.Println("autoplank v" + version)
 		os.Exit(0)
 	}
@@ -59,7 +69,37 @@ func (d display) Within(x, y int) bool {
 }
 
 func (d display) IsBottom(y int) bool {
-	return y < d.offset.y+d.axis.y && y > d.offset.y+d.axis.y-20
+	// if the cursor is this low on the screen user is going to use plank
+	// we start the moving procedure
+	yOffset := 100
+	return y < d.offset.y+d.axis.y && y > d.offset.y+d.axis.y-yOffset
+}
+
+func startPlank() (*os.Process, error) {
+	// we set up the process we want to start
+	// no error handling needed here because validate deps checks for plank command
+	plank, _ := exec.LookPath("plank")
+	var cred = &syscall.Credential{Gid: uint32(os.Getuid()), Uid: uint32(os.Getgid()), Groups: []uint32{}, NoSetGroups: true}
+	var sysproc = &syscall.SysProcAttr{Credential: cred, Noctty: true}
+	var attr = os.ProcAttr{
+		Dir: ".",
+		Env: os.Environ(),
+		Files: []*os.File{
+			os.Stdin,
+			os.Stdout,
+			os.Stderr,
+		},
+		Sys: sysproc,
+	}
+	proc, err := os.StartProcess(plank, []string{}, &attr)
+	if err != nil {
+		return nil, err
+	}
+	err = proc.Release()
+	if err != nil {
+		return nil, err
+	}
+	return proc, nil
 }
 
 func pollMouse() <-chan axis {
@@ -101,68 +141,12 @@ func getMouseLocation() (a axis, err error) {
 	return a, nil
 }
 
-var dLock sync.RWMutex
-var displaysFound []display
-
-func watchDisplays() {
-	var err error
-	displaysFound, err = fetchDisplays()
-	if err != nil {
-		log.Println(err)
-	}
-
-	for range time.Tick(time.Second * 5) {
-		dLock.Lock()
-		displaysFound, err = fetchDisplays()
-		if err != nil {
-			log.Println(err)
-		}
-		dLock.Unlock()
-	}
-}
-
-func getDisplays(lastUpdate time.Time) ([]display, bool) {
-	dLock.RLock()
-	defer dLock.RUnlock()
-
-	if !displaysUpdateTime.After(lastUpdate) {
-		return nil, false
-	}
-
-	if len(displaysFound) == 0 {
-		// this is rare and should never happen
-		// may be a one off and can be fixed at the next
-		// poll.
-		// let's simply log
-		log.Println("Error: no displays are found")
-	}
-
-	// create a copy to not worry about
-	// race conditions outside this
-	displaysCopy := make([]display, len(displaysFound))
-	copy(displaysCopy, displaysFound)
-
-	return displaysCopy, true
-}
-
-// keep track of previous displays state
-var (
-	displaysConf       string
-	displaysUpdateTime time.Time
-)
-
 func fetchDisplays() ([]display, error) {
 	cmd := exec.Command("xrandr")
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, err
 	}
-	if string(out) == displaysConf {
-		// ignore
-		return displaysFound, nil
-	}
-	displaysConf = string(out)
-	displaysUpdateTime = time.Now()
 
 	var displays []display
 	scanner := bufio.NewScanner(bytes.NewReader(out))
@@ -219,22 +203,24 @@ func movePlankTo(d display) error {
 		return nil
 	}
 
-	var buf bytes.Buffer
-	fmt.Fprint(&buf, "attempting to move plank to "+d.name)
-	if d.primary {
-		fmt.Fprintf(&buf, " - primary")
-	}
-
-	log.Println(buf.String())
-
-	return exec.Command("dconf", "write", dconfPlank, value).
+	err = exec.Command("dconf", "write", dconfPlank, value).
 		Run()
+
+	if err == nil {
+		fmt.Printf("attempting to move plank to %s\n", d.name)
+		_ = exec.Command("killall", "plank").Run()
+		_, err := startPlank()
+		return err
+	}
+	return err
+
 }
 
 var requiredCommands = []string{
 	"xrandr",
 	"xdotool",
 	"dconf",
+	"plank",
 }
 
 func validateDeps() {
@@ -252,16 +238,9 @@ func validateDeps() {
 }
 
 func eventLoop() {
-	var displays []display
-	var lastRequestTime time.Time
-	go watchDisplays()
 	var pos axis
 	for pos = range pollMouse() {
-		if ds, ok := getDisplays(lastRequestTime); ok {
-			lastRequestTime = time.Now()
-			displays = ds
-		}
-		for _, d := range displays {
+		for _, d := range displaysFound {
 			if d.Within(pos.x, pos.y) && d.IsBottom(pos.y) {
 				err := movePlankTo(d)
 				if err != nil {
